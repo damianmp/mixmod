@@ -26,7 +26,7 @@ public Event_BombDropped(Handle event, const char[] name, bool dontBroadcast){
 		GetEntPropVector(c4, Prop_Data, "m_vecAbsOrigin", vOrigin);
 		//vOrigin[2] += 80.0;
 		
-		PrintToServer("%f %f %f", vOrigin[0], vOrigin[1], vOrigin[2]);
+		//PrintToServer("%f %f %f", vOrigin[0], vOrigin[1], vOrigin[2]);
 		GetEntPropString(c4, Prop_Data, "m_iName", szTemp, sizeof(szTemp));
 		FormatEx(szBuffer, 128, "materials/sprites/bomb_dropped.vmt");
 		
