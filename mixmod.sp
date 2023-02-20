@@ -2066,6 +2066,7 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 				}
 				
 				if(winnerIndex > -1){
+					decl String:attackerName[50];
 					GetClientName(winnerIndex, attackerName, sizeof(attackerName));
 					
 					new kills = max;
