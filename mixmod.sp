@@ -2065,16 +2065,18 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 					}
 				}
 				
-				decl String:attackerName[32];
-				GetClientName(winnerIndex, attackerName, sizeof(attackerName));
-				new kills = max;
-				
-				if (kills == 5)
-					PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Did an \x04ACE!", MODNAME, g_CurrentRound-1, attackerName, kills);
-				else if (kills == 4)
-					PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Did a \x04MINI!", MODNAME, g_CurrentRound-1, attackerName, kills);
-				else if (kills == 3)
-					PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Killed:\x04 %d \x03Enemies!", MODNAME, g_CurrentRound-1, attackerName, kills);
+				if(winnerIndex > -1){
+					GetClientName(winnerIndex, attackerName, sizeof(attackerName));
+					
+					new kills = max;
+					
+					if (kills == 5)
+						PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Did an \x04ACE!", MODNAME, g_CurrentRound-1, attackerName, kills);
+					else if (kills == 4)
+						PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Did a \x04MINI!", MODNAME, g_CurrentRound-1, attackerName, kills);
+					else if (kills == 3)
+						PrintToChatAll("\x04[%s]:\x03 Round\x01 %d \x03MVP:\x04 %s , \x03Killed:\x04 %d \x03Enemies!", MODNAME, g_CurrentRound-1, attackerName, kills);
+				}
 			}
 		}
 		
