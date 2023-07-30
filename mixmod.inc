@@ -19,6 +19,10 @@ forward RoundEndMixmod(win_team);
 
 native IsMixmodStarted();
 
+native AddMixmodKnifeOption(const String:Title[], Function:func, bool:WinnerOpt=false);
+
+native RemoveMixmodKnifeOption(const String:NameOp[]);
+
 public SharedPlugin __pl_mixmod = 
 {
 	name = "mixmod",
