@@ -267,6 +267,7 @@ new Handle:g_MapListMenu = INVALID_HANDLE;
 new bool:isMixMenuGenerated = false;
 new Handle:g_MixMenu = INVALID_HANDLE;
 new Handle:g_AdminMenu = INVALID_HANDLE;
+new Handle:hArrayMenu = INVALID_HANDLE;
 
 // Winning team panel ...
 new Handle:g_WinTeamPanel = INVALID_HANDLE;
@@ -352,6 +353,8 @@ new bool:g_GaggedPlayers[MAXPLAYERS+1] = {false, ...};
 // Last entered
 static String:g_LastEntered_SteamID[35];
 static String:g_LastEntered_Name[35];
+static g_LastWinner;
+static g_LastLosser;
 
 // A variable to determine, if in the current map the props can be removed.
 new g_IsMapValidToRemoveProps = true;
@@ -423,7 +426,7 @@ public OnPluginStart()
 	g_CvarAutoMixBan = CreateConVar("sm_mixmod_auto_warmod_ban", "-1", "In minutes: how long to ban players who has left the server? <Negetive number> - Don't ban, <Positive Number> - Time, 0 - Permanent ban");
 	g_CvarEnableAutoSourceTVRecord = CreateConVar("sm_mixmod_autorecord_enable", "0", "Auto record the game when match is live? 0 - No, 1 - Yes.");
 	g_CvarAutoSourceTVRecordSaveDir = CreateConVar("sm_mixmod_autorecord_save_dir", "mix_records", "Save directatory for the auto-records (if folder doesn't exist, the record will be saved at: cstrike/ )");
-	g_CvarKnifeWinTeamVote = CreateConVar("sm_mixmod_knife_round_win_vote", "0", "Let the wining team in the knife round decide in which team they want to be? 0 - No, 1 - Yes.");
+	g_CvarKnifeWinTeamVote = CreateConVar("sm_mixmod_knife_round_win_vote", "1", "Let the wining team in the knife round decide in which team they want to be? 0 - No, 1 - Yes.");
 	g_CvarEnablePasswords = CreateConVar("sm_mixmod_password_commands_enable", "1", "Enable password commands (sm_pw or sm_npw or sm_rpw)? 0 - No, 1 - Yes.");
 	g_CvarAllowManualSwitching = CreateConVar("sm_mixmod_manual_switch_enable", "1", "Allow players to switch their team manualy when mix is running? 0 - No, 1 - Yes.");
 	g_CvarDelayBeforeSwapping = CreateConVar("sm_mixmod_time_before_swapping_teams", "0.1", "In seconds: how long should the plugin wait before swapping teams when half ends?");
@@ -764,8 +767,14 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	g_RoundStartForward = CreateGlobalForward("RoundStartMixmod", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
 	g_RoundEndForward = CreateGlobalForward("RoundEndMixmod", ET_Ignore, Param_Cell);
+	CreateNative("AddMixmodKnifeOption", Native_AddMixmodKnifeOption);
+	CreateNative("RemoveMixmodKnifeOption", Native_RemoveMixmodKnifeOption);
 	CreateNative("IsMixmodStarted", Native_IsMixmodStarted);
+	
 	RegPluginLibrary("mixmod");
+	
+	hArrayMenu = CreateArray(4);
+	
 	return APLRes_Success;
 }
 
@@ -774,6 +783,25 @@ enum iMixmodStatus
 	iMixmodStatus_desconocido = 0,
 	iMixmodStatus_isKo3Running,
 	iMixmodStatus_hasMixStarted
+}
+
+public Native_RemoveMixmodKnifeOption(Handle:hPlugin, numParams){
+	
+	PrintToServer("Native_RemoveMixmodKnifeOption");
+}
+
+public Native_AddMixmodKnifeOption(Handle:hPlugin, numParams){
+	new String:title[255];
+	GetNativeString(1, title, sizeof(title));
+	new Function:func = GetNativeFunction(2);
+
+	new Handle:dp = CreateDataPack();
+	WritePackCell(dp, hPlugin);
+	WritePackFunction(dp, func);
+	WritePackString(dp, title);
+	WritePackCell(dp, GetNativeCell(3));
+
+	PushArrayCell(hArrayMenu, dp);
 }
 
 public Native_IsMixmodStarted(Handle:hPlugin, numParams){
@@ -1060,6 +1088,9 @@ public OnMapStart()
 	CreateMapList();
 	
 	CheckPropsForCurrentMap();
+	
+	g_LastWinner = 0;
+	g_LastLosser = 0;
 }
 
 CheckPropsForCurrentMap()
@@ -1378,6 +1409,13 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		
 		if (isKo3Running) // Knife is running and its own text will be shown.
 		{
+			decl String:teamAName[32], String:teamBName[32];
+			getNombreTeam(teamAName, teamBName);
+			Call_StartForward(g_RoundStartForward);
+			Call_PushString(teamAName);
+			Call_PushString(teamBName);
+			Call_Finish();
+			
 			if (GetConVarInt(g_CvarHalfAutoLiveStart) == 1)
 				PrintToChatAll("\x04[%s]:\x03 Ko3 is running...", MODNAME);
 			else if (hasMixStarted)
@@ -1394,6 +1432,8 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 			}
 				
 			PrintToChatAll("\x04[%s]:\x03 This round is decisive on who will pick their side.", MODNAME);
+			
+			CreateTimer(1.0, CreateMenuKnife);
 			return;
 		}
 		
@@ -1676,6 +1716,13 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		}
 	}
 }
+public Action:CreateMenuKnife(Handle:timer, any:data){
+	if(g_LastWinner > 0){
+		ListAllMenuKnifeOption(g_LastWinner,GetClientTeam(g_LastWinner));
+		if(g_LastLosser > 0)
+			ListAllMenuKnifeOption(g_LastLosser,GetClientTeam(g_LastWinner));
+	}
+}
 
 RemovePlayerGuns(client)
 {
@@ -1904,31 +1951,39 @@ ShowTeamMoneyAndWeapons()
 
 public Handle_TeamsVoteMenu(Handle:menu, MenuAction:action, param1, param2)
 {
-	if (action == MenuAction_End)
+	if (action == MenuAction_Select)
 	{
-		CloseHandle(menu);
-	}
-	else if (action == MenuAction_VoteEnd)
-	{
-		if (param1 == 0)
-		{
-			new team;
-			for (new i=1; i<=MaxClients; i++)
-			{
-				if (IsClientInGame(i))
-				{
-					team = GetClientTeam(i);
-					if (team == 2)
-						ChangeClientTeam(i, 3);
-					else if (team == 3)
-						ChangeClientTeam(i, 2);
-				}
+		new size = GetArraySize(hArrayMenu);
+		new Handle:dp;
+		new Handle:pl;
+		new Function:func;
+		new String:pos[20];
+		new ipos;
+		
+		GetMenuItem(menu, param2, pos, sizeof(pos));
+		ipos = StringToInt(pos);
+		
+		for (new i = 0; i < size; i++){
+			dp = GetArrayCell(hArrayMenu, i);
+			ResetPack(dp);
+			pl = ReadPackCell(dp);
+			func = ReadPackFunction(dp);
+			
+			if(ipos == i){
+				Call_StartFunction(pl, func);
+				Call_PushCell(param1);
+				Call_Finish();
 			}
 		}
-		
-		isKo3Running = false;
-		PrintToChatAll("x04[%s]:\x03 Teams has been decided!");
-		Command_Mr15(0, 0);
+		if(StrEqual(pos, "f")){
+			isKo3Running = false;
+			PrintToChatAll("\x04[%s]:\x03 Teams has been decided!", MODNAME);
+			Command_Start(0, 0);
+		}
+	}
+	else if (action == MenuAction_End)
+	{
+		CloseHandle(menu);
 	}
 }
 
@@ -1980,25 +2035,16 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 		{
 			if ((GetConVarInt(g_CvarKnifeWinTeamVote) == 1)) // Lets vote for the side of the teams.
 			{
-				new Handle:switchteams = CreateMenu(Handle_TeamsVoteMenu);
 				new win_team = GetEventInt(event, "winner");
-				if (win_team == TEAM_T)
-					SetMenuTitle(switchteams, "Switch team side (to ct team)?");
-				else if (win_team == TEAM_CT)
-					SetMenuTitle(switchteams, "Switch team side (to t team)?");
-				AddMenuItem(switchteams, "yes", "Yes");
-				AddMenuItem(switchteams, "no", "No");
-				SetMenuExitButton(switchteams, false);
-				new clientsArr[64], found = 0;
-				for (new i=1; i<=MaxClients; i++)
-				{
-					if (IsClientInGame(i) && (GetClientTeam(i) == win_team))
+				
+				if(win_team > 1){
+					if(g_LastWinner == 0)
 					{
-						clientsArr[found] = i;
-						found++;
+						g_LastWinner = GetFirstPlayer(win_team);
+						g_LastLosser = GetFirstPlayer((win_team == CS_TEAM_CT? CS_TEAM_T: CS_TEAM_CT));
 					}
 				}
-				VoteMenu(switchteams, clientsArr, found, 12);
+				
 				if (win_team == 2)
 					PrintToChatAll("\x04[%s]:\x03 Terrorists will choose now their team!", MODNAME);
 				else if (win_team == 3)
@@ -2338,6 +2384,64 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 			}
 		}
 	}
+}
+
+public GetFirstPlayer(team)
+{
+	for (new i = 1; i < MaxClients; i++){
+		if(IsClientInGame(i))
+		{
+			if(GetClientTeam(i) == team){
+				return i;
+			}
+		}
+	}
+	return 0;
+}
+
+public ListAllMenuKnifeOption(client, win_team){
+	
+	if(client == 0){
+		return;
+	}
+
+	new Handle:mainmenu = CreateMenu(Handle_TeamsVoteMenu);
+	SetMenuTitle(mainmenu, "Menu de ronda cuchi:");
+	
+	new size = GetArraySize(hArrayMenu);
+	new Handle:dp;
+	new Handle:pl;
+	new Function:func;
+	new String:title[255];
+	new winneropt;
+	decl String:aux[20];
+	
+	new disabled = GetClientTeam(client) == win_team ? ITEMDRAW_DEFAULT:ITEMDRAW_DISABLED;
+	
+	for (new i = 0; i < size; i++){
+		dp = GetArrayCell(hArrayMenu, i);
+		ResetPack(dp);
+		pl = ReadPackCell(dp);
+		func = ReadPackFunction(dp);
+		
+		if(pl == INVALID_HANDLE && func == INVALID_FUNCTION){
+			continue;
+		}
+		
+		ReadPackString(dp, title, sizeof(title));
+		winneropt = ReadPackCell(dp);
+		
+		IntToString(i, aux, sizeof(aux));
+		
+		if(winneropt)
+			AddMenuItem(mainmenu, aux, title, disabled);
+		else
+			AddMenuItem(mainmenu, aux, title);
+	}
+
+	AddMenuItem(mainmenu, "f", "Finalizar ronda e iniciar Mix!", disabled);
+	
+	DisplayMenu(mainmenu, client, MENU_TIME_FOREVER);
 }
 
 public Event_PlayerHurt(Handle:event, const String:name[], bool:dontBroadcast)
@@ -4392,7 +4496,11 @@ public Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadc
 {
 	g_GaggedPlayers[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
 	g_MutedPlayers[GetClientOfUserId(GetEventInt(event, "userid"))] = false;
-		
+	
+	if(GetClientOfUserId(GetEventInt(event, "userid")) == g_LastWinner){
+		g_LastWinner = 0;
+	}
+	
 	if (hasMixStarted)
 	{
 		// Reset the exiting player score...
