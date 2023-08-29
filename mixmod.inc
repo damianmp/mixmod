@@ -19,6 +19,10 @@ forward RoundEndMixmod(win_team);
 
 native IsMixmodStarted();
 
+native GetKnifeWinner();
+
+native GetKnifeLoser();
+
 native AddMixmodKnifeOption(const String:Title[], Function:func, bool:WinnerOpt=false);
 
 native RemoveMixmodKnifeOption(const String:NameOp[]);

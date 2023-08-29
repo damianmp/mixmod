@@ -770,6 +770,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("AddMixmodKnifeOption", Native_AddMixmodKnifeOption);
 	CreateNative("RemoveMixmodKnifeOption", Native_RemoveMixmodKnifeOption);
 	CreateNative("IsMixmodStarted", Native_IsMixmodStarted);
+	CreateNative("GetKnifeWinner", Native_GetKnifeWinner);
+	CreateNative("GetKnifeLoser", Native_GetKnifeLoser);
 	
 	RegPluginLibrary("mixmod");
 	
@@ -783,6 +785,14 @@ enum iMixmodStatus
 	iMixmodStatus_desconocido = 0,
 	iMixmodStatus_isKo3Running,
 	iMixmodStatus_hasMixStarted
+}
+
+public Native_GetKnifeWinner(Handle:hPlugin, numParams){
+	return g_LastWinner;
+}
+
+public Native_GetKnifeLoser(Handle:hPlugin, numParams){
+	return g_LastLosser;
 }
 
 public Native_RemoveMixmodKnifeOption(Handle:hPlugin, numParams){
@@ -1716,6 +1726,7 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 		}
 	}
 }
+
 public Action:CreateMenuKnife(Handle:timer, any:data){
 	if(g_LastWinner > 0){
 		ListAllMenuKnifeOption(g_LastWinner,GetClientTeam(g_LastWinner));
@@ -2090,8 +2101,8 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 			Call_Finish();
 			
 			// The scoreboard will look exactly like the true score (sm_pause requiers that).
-			SetTeamScore(3, g_nCTScoreH1);
-			SetTeamScore(2, g_nTScoreH1);
+			//SetTeamScore(3, g_nCTScoreH1);
+			//SetTeamScore(2, g_nTScoreH1);
 			// --------------------------
 			
 			// Show the mvp - if need to...
@@ -3131,11 +3142,11 @@ CreateWinningTeamPanel(team)
 	SetPanelTitle(g_WinTeamPanel, titleFormat);
 	DrawPanelItem(g_WinTeamPanel, "", ITEMDRAW_SPACER);
 	if (team == 3)
-		Format(teamNameFormat, sizeof(teamNameFormat), "--------------\nThe mix has ended!\n\n *** The winner is ***\n  -* %s *- \n------------", teamAName);
+		Format(teamNameFormat, sizeof(teamNameFormat), "--------------\nThe mix has ended!\n\n *** The winner is ***\n  -* %s *- \n------------", teamBName);
 	else
 	{	
 		if (team == 2)
-			Format(teamNameFormat, sizeof(teamNameFormat), "--------------\nThe mix has ended!\n\n *** The winner is ***\n  -* %s *- \n------------", teamBName);
+			Format(teamNameFormat, sizeof(teamNameFormat), "--------------\nThe mix has ended!\n\n *** The winner is ***\n  -* %s *- \n------------", teamAName);
 		if (team == 1)
 			Format(teamNameFormat, sizeof(teamNameFormat), "--------------\nThe mix has ended!\n\n *** It's a DRAW! ***\n \n------------");
 	}
