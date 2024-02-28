@@ -257,7 +257,7 @@ new g_iToolsAmmo = -1;
 
 
 // IF you know what you'r doing - enable or disable: sm_setmixscore
-new bool:ENABLE_PLUGIN_CHECKING = false;
+new bool:ENABLE_PLUGIN_CHECKING = true;
 
 // Map list settings ...
 new bool:isMapListGenerated = false;
@@ -409,7 +409,7 @@ public OnPluginStart()
 	g_CvarStopCustomCfg = CreateConVar("sm_mixmod_custom_stop_cfg", "0", "Use stop.cfg instead of prac or warmup cfg when sm_stop command is performed? 0 - No, 1 - Yes");
 	g_CvarShowSwitchInPanel = CreateConVar("sm_mixmod_show_swap_in_panel", "1", "In the last round of the current half, tell the players not to switch their teams in? 0 - Chat, 1 - Panel(menu)");
 	g_CvarShowCashInPanel = CreateConVar("sm_mixmod_show_cash_in_panel", "0", "When round starts, show players money in? 0 - Chat, 1 - Panel(menu)");
-	g_CvarHalfAutoLiveStart = CreateConVar("sm_mixmod_half_auto_live", "0", "When new half begins, automatically start live? 0 - No, 1 - Yes");
+	g_CvarHalfAutoLiveStart = CreateConVar("sm_mixmod_half_auto_live", "1", "When new half begins, automatically start live? 0 - No, 1 - Yes");
 	g_CvarCustomLiveCfg = CreateConVar("sm_mixmod_custom_live_cfg", "mr15.cfg", "Custom name of the mr15 (live or match) config: (If the name doesn't exist, the plugin will try to execute match/live/mr15/esl5on5 cfg)");
 	g_CvarCustomPracCfg = CreateConVar("sm_mixmod_custom_prac_cfg", "prac.cfg", "Custom name of the prac (warmup) config: (If the name doesn't exist, the plugin will try to execute prac / warmup config)");
 	g_CvarCustomMr3Cfg = CreateConVar("sm_mixmod_custom_mr3_cfg", "mr3.cfg", "Custome name of the mr3 config: (If the name doesn't exist, the plugin will try to execute mr3.cfg)");
@@ -422,7 +422,7 @@ public OnPluginStart()
 	g_CvarRpwShowPass = CreateConVar("sm_mixmod_rpw_show_pass", "1", "Show the random password to everyone? 0 - No (only to the admin), 1 - Yes.");
 	g_CvarRemoveProps = CreateConVar("sm_mixmod_remove_props", "0", "Remove map props (like barrels) at round start when mix is running? 0 - No, 1 - Yes.");
 	g_CvarAutoMixEnabled = CreateConVar("sm_mixmod_auto_warmod_enable", "0", "Enable Auto-Warmod and ready system? 0 - No, 1 - Yes.");
-	g_CvarAutoMixRandomize = CreateConVar("sm_mixmod_auto_warmod_random", "1", "After 10 players are ready, random the team players and start? 0 - No, 1 - Yes.");
+	g_CvarAutoMixRandomize = CreateConVar("sm_mixmod_auto_warmod_random", "0", "After 10 players are ready, random the team players and start? 0 - No, 1 - Yes.");
 	g_CvarAutoMixBan = CreateConVar("sm_mixmod_auto_warmod_ban", "-1", "In minutes: how long to ban players who has left the server? <Negetive number> - Don't ban, <Positive Number> - Time, 0 - Permanent ban");
 	g_CvarEnableAutoSourceTVRecord = CreateConVar("sm_mixmod_autorecord_enable", "0", "Auto record the game when match is live? 0 - No, 1 - Yes.");
 	g_CvarAutoSourceTVRecordSaveDir = CreateConVar("sm_mixmod_autorecord_save_dir", "mix_records", "Save directatory for the auto-records (if folder doesn't exist, the record will be saved at: cstrike/ )");
@@ -494,7 +494,7 @@ public OnPluginStart()
 	HookEvent("player_spawn", Event_PlayerSpawn);
 	HookEvent("player_hurt", Event_PlayerHurt);
 	HookEvent("player_death",Event_PlayerDeath);
-//	HookEvent("player_team", Event_PlayerTeam);
+	HookEvent("player_team", Event_PlayerTeam);
 	
 	// For ready-system...
 	HookEvent("player_disconnect", Event_PlayerDisconnect);
@@ -703,7 +703,11 @@ public OnPluginStart()
 	RegConsoleCmd("sm_ready",
 		Command_Ready,
 		"Become ready command");
-		
+	
+	RegConsoleCmd("sm_r",
+		Command_Ready,
+		"Become ready command");
+	
 	RegConsoleCmd("sm_rdy",
 		Command_Ready,
 		"Become ready command");
@@ -796,7 +800,6 @@ public Native_GetKnifeLoser(Handle:hPlugin, numParams){
 }
 
 public Native_RemoveMixmodKnifeOption(Handle:hPlugin, numParams){
-	
 	PrintToServer("Native_RemoveMixmodKnifeOption");
 }
 
@@ -804,13 +807,11 @@ public Native_AddMixmodKnifeOption(Handle:hPlugin, numParams){
 	new String:title[255];
 	GetNativeString(1, title, sizeof(title));
 	new Function:func = GetNativeFunction(2);
-
 	new Handle:dp = CreateDataPack();
 	WritePackCell(dp, hPlugin);
 	WritePackFunction(dp, func);
 	WritePackString(dp, title);
 	WritePackCell(dp, GetNativeCell(3));
-
 	PushArrayCell(hArrayMenu, dp);
 }
 
@@ -880,7 +881,7 @@ public OnClientAuthorized(client, const String:auth[])
 
 public Action:InformPlayerAboutTheMix(Handle:timer, any:client)
 {
-	if (hasMixStarted)
+	if (hasMixStarted && IsClientConnected(client))
 	{
 		PrintToChat(client, "\x04[%s]:x\03 Mix is running! \x01Good Luck \x03And\x01 Have Fun!", MODNAME);
 		PrintToChat(client, "\x04[%s]:x\03 Mix is running! \x01Good Luck \x03And\x01 Have Fun!", MODNAME);
@@ -1101,6 +1102,14 @@ public OnMapStart()
 	
 	g_LastWinner = 0;
 	g_LastLosser = 0;
+	
+	for (new i=0; i<MaxClients; i++)
+	{
+		g_ReadyPlayers[i] = false;
+		g_ReadyPlayersData[i] = -1;
+	}
+	g_ReadyCount = 0;
+	g_AllowReady = true;
 }
 
 CheckPropsForCurrentMap()
@@ -1411,10 +1420,12 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 	{
 		if ((GetConVarInt(g_CvarAutoMixEnabled) == 1) && !hasMixStarted) // Inform the clients about the ready system and status...
 		{
-			UpdateReadyPanel();
-			for (new i=1; i<=MaxClients; i++)
-				if (IsClientInGame(i) && !IsFakeClient(i))
-					ShowReadyPanel(i);
+			if (!isKo3Running){
+				UpdateReadyPanel();
+				for (new i=1; i<=MaxClients; i++)
+					if (IsClientInGame(i) && !IsFakeClient(i))
+						ShowReadyPanel(i);
+				}
 		}
 		
 		if (isKo3Running) // Knife is running and its own text will be shown.
@@ -1443,7 +1454,9 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 				
 			PrintToChatAll("\x04[%s]:\x03 This round is decisive on who will pick their side.", MODNAME);
 			
-			CreateTimer(1.0, CreateMenuKnife);
+			if ((GetConVarInt(g_CvarAutoMixEnabled) == 1) && !hasMixStarted)
+				CreateTimer(1.0, CreateMenuKnife);
+				
 			return;
 		}
 		
@@ -1611,23 +1624,23 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 						if (GetConVarInt(g_CvarMr3Enabled) == 1)
 						{
 							if ((g_nCTScore == 15) && (g_nTScore == 14))
-								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamAName, teamBName);
-							else if ((g_nCTScore == 14) && (g_nTScore == 15))
 								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamBName, teamAName);
+							else if ((g_nCTScore == 14) && (g_nTScore == 15))
+								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamAName, teamBName);
 							else
 							{
 								if (g_nCTScore == 15)
-									PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-								if (g_nTScore == 15)
 									PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+								if (g_nTScore == 15)
+									PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 							}
 						}
 						else
 						{
 							if (g_nCTScore == 15)
-								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-							if (g_nTScore == 15)
 								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+							if (g_nTScore == 15)
+								PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 						}
 					}
 				}
@@ -1647,14 +1660,14 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 					PrintToChatAll("\x04[%s]:\x03 Round\x03 %d \x04- Half\x03 %d\x04 /\x03 4\x04 - %s\x03 %d,\x04 %s\x03 %d\x04.", MODNAME, g_CurrentRound, g_CurrentHalf, teamAName, g_nCTScore, teamBName, g_nTScore);
 
 				if (g_nCTScore == 18)
-					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-				if (g_nTScore == 18)
 					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+				if (g_nTScore == 18)
+					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 					
 				if (!didLiveStarted)
 					PrintToChatAll("\x04[%s]:\x03 Not Live!", MODNAME);
 			}
-			
+
 			if ((hasMixStarted) && (didLiveStarted))
 			{	
 				g_CurrentRound++;
@@ -2800,12 +2813,20 @@ public Action:Command_Live(client, args)
 	{
 		if (didLiveStarted)
 		{
-			PrintToChat(client, "\x04[%s]:\x03 Live is already running!", MODNAME);
+			if(client > 0)
+				PrintToChat(client, "\x04[%s]:\x03 Live is already running!", MODNAME);
+			else
+				PrintToServer("\x04[%s]:\x03 Live is already running!", MODNAME);
+				
 			return Plugin_Handled;
 		}
 		if (!hasMixStarted)
 		{
-			PrintToChat(client, "\x04[%s]:\x03 Mix is not running...", MODNAME);
+			if(client > 0)
+				PrintToChat(client, "\x04[%s]:\x03 Mix is not running...", MODNAME);
+			else
+				PrintToServer("\x04[%s]:\x03 Mix is not running...", MODNAME);
+				
 			return Plugin_Handled;
 		}
 		
@@ -3278,7 +3299,7 @@ public Action:Command_KO3(client, args)
 			ServerCommand("mp_restartgame %d", GetConVarInt(g_CvarRestartTimeInLiveCommand));
 		else
 			ServerCommand("mp_restartgame 1");
-			
+		
 		PrintToChatAll("\x04[%s]:\x03 Knives round!", MODNAME);
 		PrintToChatAll("\x04[%s]:\x03 Knives round!", MODNAME);
 		PrintToChatAll("\x04[%s]:\x03 Knives round!", MODNAME);
@@ -3574,23 +3595,23 @@ public Action:ShowScores(client, args)
 				if (GetConVarInt(g_CvarMr3Enabled) == 1)
 				{
 					if ((g_nCTScore == 15) && (g_nTScore == 14))
-						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamAName, teamBName);
-					else if ((g_nCTScore == 14) && (g_nTScore == 15))
 						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamBName, teamAName);
+					else if ((g_nCTScore == 14) && (g_nTScore == 15))
+						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s - \x04If %s wins, Mr3 will be loaded!", MODNAME, teamAName, teamBName);
 					else
 					{
 						if (g_nCTScore == 15)
-							PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-						if (g_nTScore == 15)
 							PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+						if (g_nTScore == 15)
+							PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 					}
 				}
 				else
 				{
 					if (g_nCTScore == 15)
-						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-					if (g_nTScore == 15)
 						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+					if (g_nTScore == 15)
+						PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 				}
 					
 				if (!didLiveStarted)
@@ -3601,9 +3622,9 @@ public Action:ShowScores(client, args)
 				PrintToChat(client, "\x04[%s]:\x03 Round\x03 %d \x04- Half\x03 %d\x04 /\x03 4\x04 - %s\x03 %d,\x04 %s\x03 %d\x04.", MODNAME, g_CurrentRound, g_CurrentHalf, teamAName, g_nCTScore, teamBName, g_nTScore);
 
 				if (g_nCTScore == 18)
-					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
-				if (g_nTScore == 18)
 					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
+				if (g_nTScore == 18)
+					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamAName);
 					
 				if (!didLiveStarted)
 					PrintToChat(client, "\x04[%s]:\x03 Not Live!", MODNAME);
@@ -4561,7 +4582,7 @@ public Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadc
 // It's disabled because I don't sure what to do here... Ban the player that left the server? Remove password when sub is needed? and etc...
 // -------------------------------------------------
 
-/*public Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroadcast)
+public Event_PlayerTeam(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	if ((GetConVarInt(g_CvarAutoMixEnabled) == 0) || g_IsItManual)
 	{
@@ -4569,10 +4590,18 @@ public Event_PlayerDisconnect(Handle:event, const String:name[], bool:dontBroadc
 	}
 	
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	new old_team = GetEventInt(event, "oldteam");
+	//new old_team = GetEventInt(event, "oldteam");
 	new new_team = GetEventInt(event, "team");
 	
-}*/
+		
+	if(isKo3Running){
+		if(client == g_LastWinner && new_team == CS_TEAM_SPECTATOR){
+			g_LastWinner = 0;
+		}
+	}
+	
+	
+}
 
 /* Disabled - Still beta... And I want to finish the other things before this.
 public Action:Command_JoinTeam(client, args)
@@ -4621,6 +4650,7 @@ public Action:Command_JoinTeam(client, args)
 {
 	new String:team[8];
 	GetCmdArg(1, team, sizeof(team));
+	
 	if ((hasMixStarted) && (GetConVarInt(g_CvarAllowManualSwitching) == 0) && (GetClientTeam(client) != 1)) // Mix is running and Manual switch is disabled! && He is not on spec team && And not going to switch to this team.
 	{
 		PrintToChat(client, "\x04[%s]:\x03 You can not change your team when mix is running!", MODNAME);
@@ -4637,10 +4667,9 @@ public Action:Command_ForceReady(client, args)
 		{
 			g_ReadyPlayers[clients] = true;
 			g_ReadyCount++;
-			
 			if (g_ReadyCount == 10)
 			{
-				Command_GenerateRandomPassword(0, 0);
+				//Command_GenerateRandomPassword(0, 0);
 				g_IsItManual = false;
 				g_AllowReady = false;
 				StartAutoMix();
@@ -4688,7 +4717,7 @@ public Action:Command_Ready(client, args)
 			
 			if (g_ReadyCount == 10)
 			{
-				Command_GenerateRandomPassword(0, 0);
+				//Command_GenerateRandomPassword(0, 0);
 				g_IsItManual = false;
 				g_AllowReady = false;
 				StartAutoMix();
@@ -4740,15 +4769,22 @@ StartAutoMix()
 		{
 			for (new i=1; i<=MaxClients; i++)
 			{
-				if (g_ReadyPlayers[i])
+				if (g_ReadyPlayers[i] && IsClientInGame(i))
 					g_ReadyPlayersData[i] = GetClientTeam(i);
 			}
 		}
 		
-		if (BalanceTeams()) // Check to see if teams are even with clients number.
-			Command_ShowTeams(0, 0);
+		/*if (BalanceTeams()) // Check to see if teams are even with clients number.
+			Command_ShowTeams(0, 0);*/
 		
-		Command_Start(0, 0);
+		
+		if(GetArraySize(hArrayMenu)>0){
+			Command_KO3(0,0);
+		}
+		else
+		{
+			Command_Start(0, 0);
+		}
 	}
 }
 
@@ -4789,11 +4825,13 @@ AreTeamsBalanced()
 	{
 		if (g_ReadyPlayers[i])
 		{
-			team = GetClientTeam(i);
-			if (team == 3)
-				teamACount++;
-			else if (team == 2)
-				teamBCount++;
+			if(IsClientInGame(i)){
+				team = GetClientTeam(i);
+				if (team == 3)
+					teamACount++;
+				else if (team == 2)
+					teamBCount++;
+			}
 		}
 	}
 	if (teamACount > teamBCount)
@@ -5071,7 +5109,7 @@ public Action:SwapTimer(Handle:timer)
 				ChangeClientTeam(client, 3);
 		}
 	}
-	
-	if ((GetConVarInt(g_CvarHalfAutoLiveStart) == 1) && g_IsItManual) // Admin need to write: !live to start...
+
+	if ((GetConVarInt(g_CvarHalfAutoLiveStart) == 1) && !g_IsItManual) // Admin need to write: !live to start...
 		didLiveStarted = true;
 }
