@@ -1656,9 +1656,13 @@ public Event_RoundStart(Handle:event, const String:name[], bool:dontBroadcast)
 				if (g_CurrentRound > (g_nCTScoreH1 + g_nTScoreH1 + 1))
 					g_CurrentRound--;
 					
-				if (GetConVarInt(g_CvarShowScores) == 1)
-					PrintToChatAll("\x04[%s]:\x03 Round\x03 %d \x04- Half\x03 %d\x04 /\x03 4\x04 - %s\x03 %d,\x04 %s\x03 %d\x04.", MODNAME, g_CurrentRound, g_CurrentHalf, teamAName, g_nCTScore, teamBName, g_nTScore);
-
+				if (GetConVarInt(g_CvarShowScores) == 1){
+					if(g_CurrentHalf == 4)
+						PrintToChatAll("\x04[%s]:\x03 Round\x03 %d \x04- Half\x03 %d\x04 /\x03 4\x04 - %s\x03 %d,\x04 %s\x03 %d\x04.", MODNAME, g_CurrentRound, g_CurrentHalf, teamBName, g_nCTScore, teamAName, g_nTScore);
+					else
+						PrintToChatAll("\x04[%s]:\x03 Round\x03 %d \x04- Half\x03 %d\x04 /\x03 4\x04 - %s\x03 %d,\x04 %s\x03 %d\x04.", MODNAME, g_CurrentRound, g_CurrentHalf, teamAName, g_nCTScore, teamBName, g_nTScore);
+				}
+					
 				if (g_nCTScore == 18)
 					PrintToChatAll("\x04[%s]:\x03 LR \x04for\x03 %s", MODNAME, teamBName);
 				if (g_nTScore == 18)
@@ -2665,6 +2669,9 @@ public Action:Command_Start(client, args)
 			g_IsItManual = false;
 		else
 			g_IsItManual = true;
+
+		if(GetConVarInt(g_CvarHalfAutoLiveStart) == 1)
+			g_IsItManual = false;
 
 			
 		// Disable ko3 - If was used, and never ended...
